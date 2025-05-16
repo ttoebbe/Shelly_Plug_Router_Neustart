@@ -10,89 +10,112 @@ function log() {
 }
 
 // *** Konfiguration ***
-var pruefIntervall            = 60;   // Quick-Check Intervall (Sekunden)
-var offlineDauer              = 20;   // Relay off-Dauer bei Offline (Sekunden)
-var pruefPauseMinuten         = 4;    // Pause bis zur Wiederaufnahme der Prüfung (Minuten)
-var anfrageTimeoutSek         = 15;   // HTTP-Request Timeout (Sekunden)
+var pruefIntervall            = 60;   // Intervall zwischen Quick_Check (Sekunden)
+var offlineDauer              = 20;   // Dauer Relay AUS bei Offline (Sekunden)
+var pruefPauseMinuten         = 4;    // Pause nach Offline-Zyklus (Minuten)
+var anfrageTimeoutSek         = 15;   // HTTP-GET Timeout (Sekunden)
 var debugAktiv                = true; // Debug-Ausgaben aktivieren?
 var zeigeAntworten            = true; // HTTP-Antworten anzeigen?
-var maxFehlversuche           = 3;    // NEU: Anzahl Fehlversuche vor Neustart (einstellbar!)
+var maxFehlversuche           = 3;    // Anzahl aufeinanderfolgender Fehlversuche vor Offline-Aktion
 
 // Prüfziele: DNS1 (Google) und lokale Fritz!Box
 var pruefZiele = {
-  "dns1":    "https://8.8.8.8",
-  "fritzbox":"http://192.168.178.1",
+  "dns1":     "https://8.8.8.8",
+  "fritzbox": "http://192.168.178.1"
 };
 
-// Zeitstempel merken für Fritz!Box-Boot-Schonzeit
-var scriptStartZeit       = Date.now();
-var BootSchonzeitSek = 240 // Zeit nach Skriptstart, ohne Prüfungen (Sekunden)
+// Boot-Schonzeit direkt nach Skriptstart (keine Prüfungen)
+var scriptStartZeit          = Date.now();
+var bootSchonzeitSek         = 240;  // Sekunden ohne Prüfungen nach Start
 
 // Laufzeit-Variablen
-var timerHandle               = null;
-var anzahlPruefungen          = 0;
-var zaehlerFehlgeschlagen     = 0;
-var zaehlerErfolgreich        = 0;
-var offlineEreignisse         = [];    // Zeitstempel zuletzt erkannter Offline-Zustände
-var offlineLimitUeberschritten = false; // Limit (3/h) erreicht?
-var aufeinanderFehlgeschlagen  = 0;    // NEU: Zähler für aufeinanderfolgende Fehlversuche
+var timerHandle              = null;
+var timerAktiv               = false;  // Flag, ob Main-Loop läuft
+var anzahlPruefungen         = 0;
+var zaehlerFehlgeschlagen    = 0;
+var zaehlerErfolgreich       = 0;
+var aufeinanderFehlgeschlagen = 0;     // aufeinanderfolgende Fehlversuche
+var offlineEreignisse        = [];    // Zeitstempel letzte Offline-Zyklen
+var offlineLimitUeberschritten = false;
 
-function State_Offline(){
+// Startet den zyklischen Quick_Check
+function MainStart() {
+  if (!timerAktiv) {
+    timerAktiv = true;
+    timerHandle = Timer.set(1000 * pruefIntervall, true, Quick_Check);
+    log("MainLoop gestartet: alle", pruefIntervall, "Sekunden Quick_Check.");
+  }
+}
+
+// Stoppt den zyklischen Quick_Check
+function MainStop() {
+  if (timerAktiv) {
+    Timer.clear(timerHandle);
+    timerAktiv = false;
+    log("MainLoop gestoppt.");
+  }
+}
+
+// Funktion bei Offline-Erkennung
+function State_Offline() {
   var jetzt = Date.now();
   if (offlineLimitUeberschritten) {
     log("Status: Limit erreicht – keine weiteren Offline-Aktionen.");
-    Main(); return;
+    MainStart();
+    return;
   }
 
-  // Offline-Ereignis protokollieren (nur letzte 60 min behalten)
+  // Offline-Zyklus protokollieren (letzte 60 Minuten)
   offlineEreignisse.push(jetzt);
-  offlineEreignisse = offlineEreignisse.filter(function(ts){
+  offlineEreignisse = offlineEreignisse.filter(function(ts) {
     return (jetzt - ts) <= 3600 * 1000;
   });
 
-  // Limit prüfen: >=3 in 60 Minuten?
+  // Limit prüfen: 3 Zyklen in 60 Minuten
   if (offlineEreignisse.length >= 3) {
     offlineLimitUeberschritten = true;
     log("Status: 3 Offline-Erkennungen innerhalb 1 Stunde – keine weiteren Aktionen.");
-    Main(); return;
+    MainStart();
+    return;
   }
 
-  // Relay aus
+  // Relay AUS und Loop stoppen
   log("Status: Offline erkannt – schalte Relay AUS für", offlineDauer, "Sekunden");
   Shelly.call("Switch.Set", { relay: 0, on: false });
+  MainStop();
 
-  // Nach offlineDauer Relay an und dann Pause
-  Timer.set(1000 * offlineDauer, false, function(){
+  // Nach offlineDauer Relay AN und nach Pause MainStart
+  Timer.set(1000 * offlineDauer, false, function() {
     log("Status: Relay wieder AN");
     Shelly.call("Switch.Set", { relay: 0, on: true });
-    Timer.set(1000 * 60 * pruefPauseMinuten, false, function(){
-      log("Starte Prüfungen neu nach", pruefPauseMinuten, "Minuten Pause");
-      Main();
+    log("Pause von", pruefPauseMinuten, "Minuten vor Neustart.");
+    Timer.set(1000 * 60 * pruefPauseMinuten, false, function() {
+      MainStart();
     });
   });
 }
 
-function Callback(rueckgabe, code, fehlermeldung, schluessel){
+// Callback für HTTP-GET
+function Callback(rueckgabe, code, fehlermeldung, schluessel) {
   try {
     if (code !== -104) zaehlerErfolgreich++; else zaehlerFehlgeschlagen++;
     if (debugAktiv) log("Connection-Check:", schluessel, (code!==-104 ? "Bestanden" : "Fehlgeschlagen"), fehlermeldung);
 
-    // Wenn alle Prüfungen durchlaufen
+    // Wenn alle Prüfungen abgeschlossen
     if (zaehlerErfolgreich + zaehlerFehlgeschlagen >= anzahlPruefungen) {
-      // Bei mindestens einer Fehlermeldung -> Zähler erhöhen, sonst zurücksetzen
       if (zaehlerFehlgeschlagen > 0) {
         aufeinanderFehlgeschlagen++;
-        log("Warnung: Fehlgeschlagene Prüfzyklen in Folge:", aufeinanderFehlgeschlagen, "/", maxFehlversuche);
+        log("Warnung: aufeinanderfolgende Fehlversuche", aufeinanderFehlgeschlagen, "/", maxFehlversuche);
         if (aufeinanderFehlgeschlagen >= maxFehlversuche) {
-          aufeinanderFehlgeschlagen = 0; // Zähler zurücksetzen nach Auslösung
+          aufeinanderFehlgeschlagen = 0;
           State_Offline();
-        } else {
-          Main();
         }
       } else {
-        aufeinanderFehlgeschlagen = 0; // Bei Erfolg zurücksetzen
-        Main();
+        aufeinanderFehlgeschlagen = 0;
       }
+      // Zähler für nächsten Zyklus zurücksetzen
+      zaehlerFehlgeschlagen = 0;
+      zaehlerErfolgreich    = 0;
     }
 
     if (zeigeAntworten) log("Antwort:", code, fehlermeldung, rueckgabe);
@@ -101,48 +124,48 @@ function Callback(rueckgabe, code, fehlermeldung, schluessel){
   }
 }
 
-function Deep_Check(zielListe){
+// Deep-Check aller Ziele
+function Deep_Check(zielListe) {
   try {
-    Object.keys(zielListe).forEach(function(schluessel){
+    Object.keys(zielListe).forEach(function(schluessel) {
       Shelly.call("HTTP.get", {
         url:     zielListe[schluessel],
         timeout: anfrageTimeoutSek
       }, Callback, schluessel);
     });
-  } catch(err) { log("Fehler in Deep_Check():", err); }
+  } catch(err) {
+    log("Fehler in Deep_Check():", err);
+  }
 }
 
-function Quick_Check(){
+// Quick-Check: WLAN-Status und ggf. Boot-Schonzeit
+function Quick_Check() {
   try {
     var wlanStatus = Shelly.getComponentStatus("wifi").status;
-    if (debugAktiv || wlanStatus!=="got ip") log("Status: WLan-Status --> [", wlanStatus, "]");
-    if (wlanStatus !== "got ip") { Timer.clear(timerHandle); State_Offline(); return; }
-
-    // Schonzeit prüfen: während dieser wird keine Prüfung ausgeführt
-    var jetzt = Date.now();
-    if ((jetzt - scriptStartZeit) < BootSchonzeitSek * 1000) {
-      log("Fritz!Box-Schonzeit aktiv – keine Prüfungen");
-      Main();
+    if (debugAktiv || wlanStatus !== "got ip") log("Status: WLAN-Status --> [", wlanStatus, "]");
+    if (wlanStatus !== "got ip") {
+      State_Offline();
       return;
     }
 
-    // Reguläre Prüfung starten
-    Timer.clear(timerHandle);
+    // Boot-Schonzeit prüfen (keine Prüfungen)
+    var jetzt = Date.now();
+    if ((jetzt - scriptStartZeit) < bootSchonzeitSek * 1000) {
+      log("Boot-Schonzeit aktiv – keine Prüfungen");
+      return;
+    }
+
+    // Regulärer Deep-Check starten
     zaehlerFehlgeschlagen = 0;
     zaehlerErfolgreich    = 0;
     anzahlPruefungen       = Object.keys(pruefZiele).length;
     Deep_Check(pruefZiele);
 
-  } catch(err) { log("Fehler in Quick_Check():", err); Main(); }
+  } catch(err) {
+    log("Fehler in Quick_Check():", err);
+  }
 }
 
-function Main(){
-  try {
-    Timer.clear(timerHandle);
-    timerHandle = Timer.set(1000 * pruefIntervall, true, Quick_Check);
-  } catch(err) { log("Fehler in Main():", err); }
-}
-
-// Skriptstart
-Main();
-log("Status: Connection Check mit Relay-Offline-Limit und Schonzeit läuft...");
+// Skriptstart: MainLoop starten
+MainStart();
+log("Status: Connection Check läuft mit konfigurierten Einstellungen...");
