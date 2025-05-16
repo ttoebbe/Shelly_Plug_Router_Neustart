@@ -20,12 +20,12 @@ var zeigeAntworten            = true; // HTTP-Antworten anzeigen?
 // Prüfziele: DNS1 (Google) und lokale Fritz!Box
 var pruefZiele = {
   "dns1":    "https://8.8.8.8",
-  "fritzbox":"http://192.168.178.82"
+  "fritzbox":"http://192.168.178.1",
 };
 
 // Zeitstempel merken für Fritz!Box-Boot-Schonzeit
 var scriptStartZeit       = Date.now();
-var fritzBootSchonzeitSek = 180;  // Zeit nach Skriptstart, ohne Prüfungen (Sekunden)
+var BootSchonzeitSek = 240 // Zeit nach Skriptstart, ohne Prüfungen (Sekunden)
 
 // Laufzeit-Variablen
 var timerHandle               = null;
@@ -106,7 +106,7 @@ function Quick_Check(){
 
     // Schonzeit prüfen: während dieser wird keine Prüfung ausgeführt
     var jetzt = Date.now();
-    if ((jetzt - scriptStartZeit) < fritzBootSchonzeitSek * 1000) {
+    if ((jetzt - scriptStartZeit) < BootSchonzeitSek * 1000) {
       log("Fritz!Box-Schonzeit aktiv – keine Prüfungen");
       Main();
       return;

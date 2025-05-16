@@ -35,14 +35,14 @@ Im oberen Teil des Skripts findest du folgende Parameter:
 | `debugAktiv`            | Aktiviert erweiterte Debug‑Ausgaben (WLAN‑Status, Connection‑Check‑Ergebnisse)                      | Boolean  | `true`     |
 | `zeigeAntworten`        | Gibt die kompletten HTTP‑Antworten im Log aus                                                       | Boolean  | `true`     |
 | `pruefZiele`            | Objekt mit den zu prüfenden Endpunkten (`Schlüssel: Name`, `Wert: URL`)                             | —        | DNS1+Fritz |
-| `fritzBootSchonzeitSek` | Schonzeit nach Skriptstart, in der **keine** Prüfungen ausgeführt werden (z. B. Boot der Fritz!Box) | Sekunden | 180        |
+| `BootSchonzeitSek`      | Schonzeit nach Skriptstart, in der **keine** Prüfungen ausgeführt werden (z. B. Boot der Fritz!Box) | Sekunden | 240        |
 
 ### Beispiel Prüfziele
 
 ```js
 var pruefZiele = {
   "dns1":    "https://8.8.8.8",        // Google Public DNS
-  "fritzbox":"http://192.168.178.82"  // Lokale Fritz!Box
+  "fritzbox":"http://192.168.178.1"  // Lokale Fritz!Box
 };
 ```
 
@@ -54,7 +54,7 @@ var pruefZiele = {
 
    * WLAN‑Status prüfen.
    * Falls keine IP → `State_Offline()`.
-   * Falls in `fritzBootSchonzeitSek` nach Start → Prüfung aussetzen.
+   * Falls in `BootSchonzeitSek` nach Start → Prüfung aussetzen.
    * Sonst → `Deep_Check()` aller `pruefZiele`.
 4. **Deep\_Check**: HTTP-GET an alle Ziele mit `anfrageTimeoutSek`.
 5. **Callback**: Zählt Erfolge/Fehler.
