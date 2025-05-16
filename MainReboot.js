@@ -16,6 +16,7 @@ var pruefPauseMinuten         = 4;    // Pause bis zur Wiederaufnahme der Prüfu
 var anfrageTimeoutSek         = 15;   // HTTP-Request Timeout (Sekunden)
 var debugAktiv                = true; // Debug-Ausgaben aktivieren?
 var zeigeAntworten            = true; // HTTP-Antworten anzeigen?
+var maxFehlversuche           = 3;    // NEU: Anzahl Fehlversuche vor Neustart (einstellbar!)
 
 // Prüfziele: DNS1 (Google) und lokale Fritz!Box
 var pruefZiele = {
@@ -34,6 +35,7 @@ var zaehlerFehlgeschlagen     = 0;
 var zaehlerErfolgreich        = 0;
 var offlineEreignisse         = [];    // Zeitstempel zuletzt erkannter Offline-Zustände
 var offlineLimitUeberschritten = false; // Limit (3/h) erreicht?
+var aufeinanderFehlgeschlagen  = 0;    // NEU: Zähler für aufeinanderfolgende Fehlversuche
 
 function State_Offline(){
   var jetzt = Date.now();
@@ -77,8 +79,20 @@ function Callback(rueckgabe, code, fehlermeldung, schluessel){
 
     // Wenn alle Prüfungen durchlaufen
     if (zaehlerErfolgreich + zaehlerFehlgeschlagen >= anzahlPruefungen) {
-      // Bei mindestens einer Fehlermeldung -> Offline-Zustand
-      if (zaehlerFehlgeschlagen > 0) State_Offline(); else Main();
+      // Bei mindestens einer Fehlermeldung -> Zähler erhöhen, sonst zurücksetzen
+      if (zaehlerFehlgeschlagen > 0) {
+        aufeinanderFehlgeschlagen++;
+        log("Warnung: Fehlgeschlagene Prüfzyklen in Folge:", aufeinanderFehlgeschlagen, "/", maxFehlversuche);
+        if (aufeinanderFehlgeschlagen >= maxFehlversuche) {
+          aufeinanderFehlgeschlagen = 0; // Zähler zurücksetzen nach Auslösung
+          State_Offline();
+        } else {
+          Main();
+        }
+      } else {
+        aufeinanderFehlgeschlagen = 0; // Bei Erfolg zurücksetzen
+        Main();
+      }
     }
 
     if (zeigeAntworten) log("Antwort:", code, fehlermeldung, rueckgabe);

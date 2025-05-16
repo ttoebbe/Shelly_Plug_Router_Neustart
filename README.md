@@ -4,75 +4,86 @@ Eine für mich schlecht erreichbare Router geht alle 2-3 Wochen auf Störung und
 
 
 
-# Connection Check mit Relay‑Offline‑Limit für Shelly Pug S G3
+# Connection Check mit Relay-Offline-Limit für Shelly Pug S G3
 
-Dieses Skript überwacht kontinuierlich die Internet-Konnektivität deines Shelly Pug S G3 und steuert ein Relay entsprechend (Neustart des Router auslösen), wenn ein Offline-Zustand erkannt wird oder der Router selber nicht mehr erreicht wird. Es verhindert darüber hinaus zu häufiges Schalten (Limit: maximal 3 Offline‑Zyklen pro Stunde) und berücksichtigt die Bootzeit der lokalen Fritz!Box.
+Dieses Skript überwacht kontinuierlich die Internet-Konnektivität deines Shelly Pug S G3 und steuert ein Relay bei Ausfällen. Es berücksichtigt:
+
+* Mehrere aufeinanderfolgende Fehlversuche (konfigurierbar) bevor eine Offline-Aktion ausgelöst wird.
+* Ein Limit von maximal drei Offline-Zyklen pro Stunde, um Dauer-Schaltungen zu verhindern.
+* Eine Boot-Schonzeit direkt nach Skriptstart, in der keine Prüfungen stattfinden (z.B. für das Hochfahren der Fritz!Box).
+
+---
 
 ## Features
 
-* **Quick-Check**: Intervallgesteuerte Überprüfung des WLAN‑Status und optionaler Internet‑Tests.
-* **Deep-Check**: HTTP-GET-Requests an definierte Prüfziele (z. B. Google DNS, lokale Fritz!Box).
-* **Offline‑State**: Relay schaltet bei Ausfall für eine konfigurierbare Dauer ab und danach wieder an.
-* **Limit**: Maximal 3 Offline‑Zyklen pro Stunde, um Dauer-Schaltvorgänge zu vermeiden.
-* **Boot‑Schonzeit**: Nach Skriptstart werden Prüfungen für eine definierte Zeit ausgesetzt (z. B. für Fritz!Box-Boot).
-* **Logging**: Umfangreiche Status‑ und Antwortmeldungen in der Konsole.
+* **Quick-Check**: Zyklische Prüfung des WLAN-Status und anschließend optionaler Deep-Check.
+* **Deep-Check**: HTTP-GET-Requests an definierte Prüfziele (Google DNS und lokale Fritz!Box).
+* **Fehlschlag-Zähler**: Löst nach `maxFehlversuche` aufeinanderfolgenden Fehlern die Offline-Aktion aus.
+* **Offline-State**: Schaltet das Relay für `offlineDauer` Sekunden ab, dann wieder an, gefolgt von einer Pause.
+* **Limit 3/h**: Nach drei Offline-Aktionen innerhalb 60 Minuten keine weiteren Schaltungen.
+* **Boot-Schonzeit**: Unterdrückt Prüfungen in den ersten `BootSchonzeitSek` Sekunden nach Skriptstart.
+* **Logging**: Umfangreiche Konsolenausgaben zu Status, Prüfzyklen, Fehlversuchen und HTTP-Antworten.
+
+---
 
 ## Installation
 
-1. Öffne die Shelly Scripte-Verwaltung via Web UI.
-2. Lege ein neues JavaScript‑Skript an.
-3. Kopiere den Inhalt aus `connection_check_relay_offline_limit.js` in den Editor.
+1. Melde dich in der Shelly Web-Oberfläche an.
+2. Öffne den Skript-Editor und erstelle ein neues JavaScript-Skript.
+3. Kopiere den vollständigen Code (siehe unten) in den Editor.
 4. Speichere und aktiviere das Skript.
+
+---
 
 ## Konfiguration
 
-Im oberen Teil des Skripts findest du folgende Parameter:
+Im oberen Teil des Skripts kannst du folgende Parameter anpassen:
 
-| Parameter               | Beschreibung                                                                                        | Einheit  | Standard   |
-| ----------------------- | --------------------------------------------------------------------------------------------------- | -------- | ---------- |
-| `pruefIntervall`        | Abstand zwischen zwei Quick‑Checks                                                                  | Sekunden | 60         |
-| `offlineDauer`          | Dauer, in der bei erkannten Offline‑Zuständen das Relay ausgeschaltet bleibt                        | Sekunden | 20         |
-| `pruefPauseMinuten`     | Ruhezeit nach einem Offline‑Zyklus, bevor die Prüfungen neu starten                                 | Minuten  | 4          |
-| `anfrageTimeoutSek`     | Timeout für jede HTTP‑GET‑Anfrage                                                                   | Sekunden | 15         |
-| `debugAktiv`            | Aktiviert erweiterte Debug‑Ausgaben (WLAN‑Status, Connection‑Check‑Ergebnisse)                      | Boolean  | `true`     |
-| `zeigeAntworten`        | Gibt die kompletten HTTP‑Antworten im Log aus                                                       | Boolean  | `true`     |
-| `pruefZiele`            | Objekt mit den zu prüfenden Endpunkten (`Schlüssel: Name`, `Wert: URL`)                             | —        | DNS1+Fritz |
-| `BootSchonzeitSek`      | Schonzeit nach Skriptstart, in der **keine** Prüfungen ausgeführt werden (z. B. Boot der Fritz!Box) | Sekunden | 240        |
+| Parameter           | Beschreibung                                                                            | Einheit  | Standard  |
+| ------------------- | --------------------------------------------------------------------------------------- | -------- | --------- |
+| `pruefIntervall`    | Intervall für `Quick_Check()`                                                           | Sekunden | `60`      |
+| `offlineDauer`      | Dauer, wie lange das Relay bei Offline ausgeschaltet bleibt                             | Sekunden | `20`      |
+| `pruefPauseMinuten` | Ruhezeit nach einem Offline-Zyklus, bevor erneut geprüft wird                           | Minuten  | `4`       |
+| `anfrageTimeoutSek` | Timeout für jede HTTP-GET-Anfrage                                                       | Sekunden | `15`      |
+| `maxFehlversuche`   | Anzahl aufeinanderfolgender Fehlzyklen bis zur Auslösung der Offline-Aktion             | Zyklen   | `3`       |
+| `debugAktiv`        | Schaltet erweiterte Status- und Fehlermeldungen ein                                     | Boolean  | `true`    |
+| `zeigeAntworten`    | Gibt die vollständigen HTTP-Antworten im Log aus                                        | Boolean  | `true`    |
+| `pruefZiele`        | Objekt mit Prüf-Endpunkten (`Schlüssel`: Name, `Wert`: URL)                             | —        | DNS+Fritz |
+| `BootSchonzeitSek`  | Dauer ab Skriptstart, in der **keine** Prüfungen stattfinden (Boot-Phase der Fritz!Box) | Sekunden | `240`     |
 
 ### Beispiel Prüfziele
 
 ```js
 var pruefZiele = {
-  "dns1":    "https://8.8.8.8",        // Google Public DNS
-  "fritzbox":"http://192.168.178.1"  // Lokale Fritz!Box
+  "dns1":     "https://8.8.8.8",      // Google Public DNS
+  "fritzbox": "http://192.168.178.1" // Lokale Fritz!Box
 };
 ```
 
-## Ablaufdiagramm
+---
 
-1. **Start**: Speichere `scriptStartZeit`.
-2. **Main Loop**: Alle `pruefIntervall` Sekunden `Quick_Check()`.
+## Ablauf
+
+1. **Skriptstart**: Speichert `scriptStartZeit`.
+2. **Main-Loop**: Ruft alle `pruefIntervall` Sekunden `Quick_Check()` auf.
 3. **Quick\_Check**:
 
-   * WLAN‑Status prüfen.
-   * Falls keine IP → `State_Offline()`.
-   * Falls in `BootSchonzeitSek` nach Start → Prüfung aussetzen.
-   * Sonst → `Deep_Check()` aller `pruefZiele`.
-4. **Deep\_Check**: HTTP-GET an alle Ziele mit `anfrageTimeoutSek`.
-5. **Callback**: Zählt Erfolge/Fehler.
+   * Prüft WLAN-Status; bei fehlender IP sofort `State_Offline()`.
+   * Innerhalb der Boot-Schonzeit (`BootSchonzeitSek`) wird die Runde übersprungen.
+   * Ansonsten Reset der Zähler und Aufruf von `Deep_Check()`.
+4. **Deep\_Check**: Sendet parallele HTTP-GET-Requests an alle Einträge in `pruefZiele`.
+5. **Callback**:
 
-   * Wenn **≥1 Fehler** → `State_Offline()`.
-   * Sonst → Neustart Main Loop.
+   * Zählt erfolgreiche und fehlgeschlagene Requests.
+   * Bei `zaehlerFehlgeschlagen > 0`: erhöht `aufeinanderFehlgeschlagen`.
+
+     * Ab `maxFehlversuche` aufeinanderfolgenden Fehlern → `State_Offline()`.
+     * Sonst: Neustart Main-Loop.
+   * Bei allen erfolgreichen Requests: setzt `aufeinanderFehlgeschlagen = 0` und Neustart.
 6. **State\_Offline**:
 
-   * Offline‑Ereignis loggen (nur letzte 60 Minuten).
-   * Bei ≥3 Ereignissen → Limit aktiv → keine weiteren Aktionen.
-   * Relay aus für `offlineDauer` Sekunden → wieder an.
-   * Pause `pruefPauseMinuten` Minuten → Main Loop.
-
-## Anpassung und Erweiterung
-
-* **Weitere Prüfziele**: Ergänze im Objekt `pruefZiele` einfach neue Schlüssel/URLs.
-* **Limit ändern**: Passe die Grenzen in `State_Offline()` an (aktuell 3 pro Stunde).
-* **Logs reduzieren**: Setze `debugAktiv` oder `zeigeAntworten` auf `false`.
+   * Protokolliert Offline-Ereignis (nur letzte 60 Minuten).
+   * Nach drei Aktionen binnen 60 Minuten deaktiviert weiteres Schalten.
+   * Schaltet Relay für `offlineDauer` Sekunden aus, dann wieder an.
+   * Wartet `pruefPauseMinuten` Minuten und startet Main-Loop neu.
 
