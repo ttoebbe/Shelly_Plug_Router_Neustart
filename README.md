@@ -2,68 +2,75 @@
 Router Neustart wenn Offline oder Router nicht erreichbar mit Shelly 
 
 
-Das Skript übernimmt folgende Aufgaben:
+# Connection Check mit Relay‑Offline‑Limit für Shelly Pug S G3
 
-Initialisierung und Logging
-– Beim Start wird mit scriptStartZeit festgehalten, wann das Skript gestartet wurde.
-– Die Funktion log() sammelt alle übergebenen Argumente zu einer Meldung und gibt sie via console.log() aus.
+Dieses Skript überwacht kontinuierlich die Internet-Konnektivität deines Shelly Pug S G3 und steuert ein Relay entsprechend, wenn ein Offline-Zustand erkannt wird. Es verhindert darüber hinaus zu häufiges Schalten (Limit: maximal 3 Offline‑Zyklen pro Stunde) und berücksichtigt die Bootzeit der lokalen Fritz!Box.
 
-Konfigurations­parameter
-Du kannst ganz oben im Skript folgende Werte anpassen:
+## Features
 
-Variable	Bedeutung	Einheit	Standard
-pruefIntervall	Abstand zwischen zwei Quick-Checks	Sekunden	60
-offlineDauer	Dauer, für die bei erkannter Offline-Situation das Relay ausgeschaltet bleibt	Sekunden	20
-pruefPauseMinuten	Ruhezeit nach einem Offline-Zyklus, bevor die Prüfungen wieder aufgenommen werden	Minuten	4
-anfrageTimeoutSek	Timeout für jede HTTP-GET-Anfrage	Sekunden	15
-debugAktiv	Schaltet erweiterte Debug-Meldungen ein (WLAN-Status, Connection-Check-Resultate)	boolean	true
-zeigeAntworten	Gibt die kompletten HTTP-Antworten im Log aus	boolean	true
-pruefZiele	Objekt mit den zu prüfenden Endpunkten (Schlüssel = Name, Wert = URL)	—	DNS1 + Fritz!Box
-fritzBootSchonzeitSek	Zeit nach Skriptstart, während der keine Prüfungen** ausgeführt werden	Sekunden	180
+* **Quick-Check**: Intervallgesteuerte Überprüfung des WLAN‑Status und optionaler Internet‑Tests.
+* **Deep-Check**: HTTP-GET-Requests an definierte Prüfziele (z. B. Google DNS, lokale Fritz!Box).
+* **Offline‑State**: Relay schaltet bei Ausfall für eine konfigurierbare Dauer ab und danach wieder an.
+* **Limit**: Maximal 3 Offline‑Zyklen pro Stunde, um Dauer-Schaltvorgänge zu vermeiden.
+* **Boot‑Schonzeit**: Nach Skriptstart werden Prüfungen für eine definierte Zeit ausgesetzt (z. B. für Fritz!Box-Boot).
+* **Logging**: Umfangreiche Status‑ und Antwortmeldungen in der Konsole.
 
-Boot-Schonzeit
-Nach einem (Wieder-)Start wird für die Dauer von fritzBootSchonzeitSek keine Prüfung ausgeführt – weder auf den Google-DNS-Server noch auf die Fritz!Box. Erst danach beginnt das zyklische Monitoring.
+## Installation
 
-Quick_Check
-– Prüft zunächst den WLAN-Status. Fehlt eine IP („got ip“), wird sofort in den Offline-Zustand gewechselt.
-– Liegt die Start-Schonzeit noch nicht hinter sich, wird diese Runde übersprungen.
-– Andernfalls werden nacheinander die in pruefZiele definierten URLs per HTTP-GET angefragt.
+1. Öffne die Shelly Scripte-Verwaltung via Web UI.
+2. Lege ein neues JavaScript‑Skript an.
+3. Kopiere den Inhalt aus `connection_check_relay_offline_limit.js` in den Editor.
+4. Speichere und aktiviere das Skript.
 
-Deep_Check und Callback
-– Für jedes Ziel wird eine Anfrage mit Timeout anfrageTimeoutSek gestartet.
-– Die Callback-Funktion zählt erfolgreiche und fehlgeschlagene Anfragen.
-– Sobald mindestens eine Anfrage fehlschlägt, wird State_Offline() ausgeführt.
+## Konfiguration
 
-State_Offline
-– Protokolliert das aktuelle Offline-Ereignis und behält nur die Ereignisse der letzten 60 Minuten.
-– Überschreitet die Anzahl 3 in einer Stunde das Limit, deaktiviert es weitere Offline-Aktionen.
-– Schaltet das Relay für offlineDauer Sekunden ab, danach wieder an.
-– Startet nach einer Ruhepause von pruefPauseMinuten Minuten den Prüfzyklus neu.
+Im oberen Teil des Skripts findest du folgende Parameter:
 
-Main-Loop
-Die Funktion Main() sorgt dafür, dass Quick_Check() alle pruefIntervall Sekunden automatisch aufgerufen wird.
+| Parameter               | Beschreibung                                                                                        | Einheit  | Standard   |
+| ----------------------- | --------------------------------------------------------------------------------------------------- | -------- | ---------- |
+| `pruefIntervall`        | Abstand zwischen zwei Quick‑Checks                                                                  | Sekunden | 60         |
+| `offlineDauer`          | Dauer, in der bei erkannten Offline‑Zuständen das Relay ausgeschaltet bleibt                        | Sekunden | 20         |
+| `pruefPauseMinuten`     | Ruhezeit nach einem Offline‑Zyklus, bevor die Prüfungen neu starten                                 | Minuten  | 4          |
+| `anfrageTimeoutSek`     | Timeout für jede HTTP‑GET‑Anfrage                                                                   | Sekunden | 15         |
+| `debugAktiv`            | Aktiviert erweiterte Debug‑Ausgaben (WLAN‑Status, Connection‑Check‑Ergebnisse)                      | Boolean  | `true`     |
+| `zeigeAntworten`        | Gibt die kompletten HTTP‑Antworten im Log aus                                                       | Boolean  | `true`     |
+| `pruefZiele`            | Objekt mit den zu prüfenden Endpunkten (`Schlüssel: Name`, `Wert: URL`)                             | —        | DNS1+Fritz |
+| `fritzBootSchonzeitSek` | Schonzeit nach Skriptstart, in der **keine** Prüfungen ausgeführt werden (z. B. Boot der Fritz!Box) | Sekunden | 180        |
 
-Einstellmöglichkeiten im Überblick
-Prüfintervalle
+### Beispiel Prüfziele
 
-pruefIntervall (Sekunden)
+```js
+var pruefZiele = {
+  "dns1":    "https://8.8.8.8",        // Google Public DNS
+  "fritzbox":"http://192.168.178.82"  // Lokale Fritz!Box
+};
+```
 
-Timeouts & Pausen
+## Ablaufdiagramm
 
-anfrageTimeoutSek (Timeout HTTP)
+1. **Start**: Speichere `scriptStartZeit`.
+2. **Main Loop**: Alle `pruefIntervall` Sekunden `Quick_Check()`.
+3. **Quick\_Check**:
 
-offlineDauer (Aus-Zeit Relay)
+   * WLAN‑Status prüfen.
+   * Falls keine IP → `State_Offline()`.
+   * Falls in `fritzBootSchonzeitSek` nach Start → Prüfung aussetzen.
+   * Sonst → `Deep_Check()` aller `pruefZiele`.
+4. **Deep\_Check**: HTTP-GET an alle Ziele mit `anfrageTimeoutSek`.
+5. **Callback**: Zählt Erfolge/Fehler.
 
-pruefPauseMinuten (Pause nach Offline)
+   * Wenn **≥1 Fehler** → `State_Offline()`.
+   * Sonst → Neustart Main Loop.
+6. **State\_Offline**:
 
-fritzBootSchonzeitSek (Keine Prüfung nach Start)
+   * Offline‑Ereignis loggen (nur letzte 60 Minuten).
+   * Bei ≥3 Ereignissen → Limit aktiv → keine weiteren Aktionen.
+   * Relay aus für `offlineDauer` Sekunden → wieder an.
+   * Pause `pruefPauseMinuten` Minuten → Main Loop.
 
-Logging
+## Anpassung und Erweiterung
 
-debugAktiv (WLAN-Status & Check-Logs)
+* **Weitere Prüfziele**: Ergänze im Objekt `pruefZiele` einfach neue Schlüssel/URLs.
+* **Limit ändern**: Passe die Grenzen in `State_Offline()` an (aktuell 3 pro Stunde).
+* **Logs reduzieren**: Setze `debugAktiv` oder `zeigeAntworten` auf `false`.
 
-zeigeAntworten (volle HTTP-Antworten)
-
-Prüfziele
-
-pruefZiele (z. B. "dns1": "https://8.8.8.8", "fritzbox": "http://192.168.178.82")
