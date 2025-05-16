@@ -1,6 +1,5 @@
-// Connection Check mit Relay-Offline-Funktion und Limit für Shelly Pug S G3
+// Connection Check mit Relay-Offline-Funktion (Shelly Plug S G3)
 
-// Einfaches Logging mit console.log
 function log() {
   var nachricht = "";
   for (var i = 0; i < arguments.length; i++) {
@@ -10,102 +9,98 @@ function log() {
 }
 
 // *** Konfiguration ***
-var pruefIntervall            = 60;   // Intervall zwischen Quick_Check (Sekunden)
-var offlineDauer              = 20;   // Dauer Relay AUS bei Offline (Sekunden)
-var pruefPauseMinuten         = 4;    // Pause nach Offline-Zyklus (Minuten)
-var anfrageTimeoutSek         = 15;   // HTTP-GET Timeout (Sekunden)
-var debugAktiv                = true; // Debug-Ausgaben aktivieren?
-var zeigeAntworten            = true; // HTTP-Antworten anzeigen?
-var maxFehlversuche           = 3;    // Anzahl aufeinanderfolgender Fehlversuche vor Offline-Aktion
+var pruefIntervall = 60;     // Quick-Check-Intervall (Sekunden)
+var offlineDauer = 20;       // Relay AUS-Dauer (Sekunden)
+var pruefPauseMinuten = 4;   // Pause nach Offline (Minuten)
+var httpTimeout = 5;         // HTTP-Timeout (Sekunden)
+var debugAktiv = true;       // Debug-Logging
+var maxFehlversuche = 3;     // Fehlversuche vor Offline
 
-// Prüfziele: DNS1 (Google) und lokale Fritz!Box
+// Ziele: Lightweight-HTTP-Endpoints
 var pruefZiele = {
-  "dns1":     "https://8.8.8.8",
-  "fritzbox": "http://192.168.178.1"
+  "google": "http://connectivitycheck.gstatic.com/generate_204",
+  "fritzbox": "http://192.168.178.1/login_success.lua"
 };
 
-// Boot-Schonzeit direkt nach Skriptstart (keine Prüfungen)
-var scriptStartZeit          = Date.now();
-var bootSchonzeitSek         = 240;  // Sekunden ohne Prüfungen nach Start
-
-// Laufzeit-Variablen
-var timerHandle              = null;
-var timerAktiv               = false;  // Flag, ob Main-Loop läuft
-var anzahlPruefungen         = 0;
-var zaehlerFehlgeschlagen    = 0;
-var zaehlerErfolgreich       = 0;
-var aufeinanderFehlgeschlagen = 0;     // aufeinanderfolgende Fehlversuche
-var offlineEreignisse        = [];    // Zeitstempel letzte Offline-Zyklen
+var scriptStartZeit = Date.now();
+var bootSchonzeitSek = 120;  // Boot-Schonzeit (Sekunden)
+var timerHandle = null;
+var timerAktiv = false;
+var aufeinanderFehlgeschlagen = 0;
+var offlineEreignisse = [];
 var offlineLimitUeberschritten = false;
 
-// Startet den zyklischen Quick_Check
+// Main-Loop
 function MainStart() {
   if (!timerAktiv) {
     timerAktiv = true;
-    timerHandle = Timer.set(1000 * pruefIntervall, true, Quick_Check);
-    log("MainLoop gestartet: alle", pruefIntervall, "Sekunden Quick_Check.");
+    timerHandle = Timer.set(pruefIntervall * 1000, true, Quick_Check);
+    log("MainLoop gestartet (Intervall:", pruefIntervall, "s)");
   }
 }
 
-// Stoppt den zyklischen Quick_Check
 function MainStop() {
   if (timerAktiv) {
     Timer.clear(timerHandle);
     timerAktiv = false;
-    log("MainLoop gestoppt.");
+    log("MainLoop gestoppt");
   }
 }
 
-// Funktion bei Offline-Erkennung
+// Offline-Handling
 function State_Offline() {
   var jetzt = Date.now();
   if (offlineLimitUeberschritten) {
-    log("Status: Limit erreicht – keine weiteren Offline-Aktionen.");
-    MainStart();
+    log("Offline-Limit erreicht – keine Aktion");
     return;
   }
 
-  // Offline-Zyklus protokollieren (letzte 60 Minuten)
   offlineEreignisse.push(jetzt);
   offlineEreignisse = offlineEreignisse.filter(function(ts) {
     return (jetzt - ts) <= 3600 * 1000;
   });
 
-  // Limit prüfen: 3 Zyklen in 60 Minuten
   if (offlineEreignisse.length >= 3) {
     offlineLimitUeberschritten = true;
-    log("Status: 3 Offline-Erkennungen innerhalb 1 Stunde – keine weiteren Aktionen.");
-    MainStart();
+    log("Offline-Limit (3/h) – deaktiviert");
     return;
   }
 
-  // Relay AUS und Loop stoppen
-  log("Status: Offline erkannt – schalte Relay AUS für", offlineDauer, "Sekunden");
+  log("Offline – Relay AUS für", offlineDauer, "s");
   Shelly.call("Switch.Set", { relay: 0, on: false });
   MainStop();
 
-  // Nach offlineDauer Relay AN und nach Pause MainStart
-  Timer.set(1000 * offlineDauer, false, function() {
-    log("Status: Relay wieder AN");
+  Timer.set(offlineDauer * 1000, false, function() {
     Shelly.call("Switch.Set", { relay: 0, on: true });
-    log("Pause von", pruefPauseMinuten, "Minuten vor Neustart.");
-    Timer.set(1000 * 60 * pruefPauseMinuten, false, function() {
-      MainStart();
-    });
+    log("Relay AN – Pause:", pruefPauseMinuten, "Minuten");
+    Timer.set(pruefPauseMinuten * 60 * 1000, false, MainStart);
   });
 }
 
-// Callback für HTTP-GET
-function Callback(rueckgabe, code, fehlermeldung, schluessel) {
-  try {
-    if (code !== -104) zaehlerErfolgreich++; else zaehlerFehlgeschlagen++;
-    if (debugAktiv) log("Connection-Check:", schluessel, (code!==-104 ? "Bestanden" : "Fehlgeschlagen"), fehlermeldung);
+// HTTP-Check (Callback-basiert)
+function HTTP_Check(ziel, callback) {
+  Shelly.call("HTTP.get", {
+    url: ziel,
+    timeout: httpTimeout,
+    headers: { "User-Agent": "Shelly-Check" }
+  }, function(res, code, err) {
+    var ok = (code === 200 || code === 204);
+    if (debugAktiv) log("HTTP-Check:", ziel, ok ? "OK" : "FEHLER");
+    callback(ok);
+  });
+}
 
-    // Wenn alle Prüfungen abgeschlossen
-    if (zaehlerErfolgreich + zaehlerFehlgeschlagen >= anzahlPruefungen) {
-      if (zaehlerFehlgeschlagen > 0) {
+// Sequenzielle Prüfung (ohne async/await)
+function Deep_Check() {
+  var ziele = Object.keys(pruefZiele);
+  var fehler = 0;
+  var index = 0;
+
+  function checkNext() {
+    if (index >= ziele.length) {
+      if (fehler > 0) {
         aufeinanderFehlgeschlagen++;
-        log("Warnung: aufeinanderfolgende Fehlversuche", aufeinanderFehlgeschlagen, "/", maxFehlversuche);
+        log("Fehlversuche:", aufeinanderFehlgeschlagen, "/", maxFehlversuche);
         if (aufeinanderFehlgeschlagen >= maxFehlversuche) {
           aufeinanderFehlgeschlagen = 0;
           State_Offline();
@@ -113,59 +108,41 @@ function Callback(rueckgabe, code, fehlermeldung, schluessel) {
       } else {
         aufeinanderFehlgeschlagen = 0;
       }
-      // Zähler für nächsten Zyklus zurücksetzen
-      zaehlerFehlgeschlagen = 0;
-      zaehlerErfolgreich    = 0;
+      return;
     }
 
-    if (zeigeAntworten) log("Antwort:", code, fehlermeldung, rueckgabe);
-  } catch(err) {
-    log("Fehler in Callback():", err);
-  }
-}
-
-// Deep-Check aller Ziele
-function Deep_Check(zielListe) {
-  try {
-    Object.keys(zielListe).forEach(function(schluessel) {
-      Shelly.call("HTTP.get", {
-        url:     zielListe[schluessel],
-        timeout: anfrageTimeoutSek
-      }, Callback, schluessel);
+    var key = ziele[index++];
+    var url = pruefZiele[key];
+    HTTP_Check(url, function(ok) {
+      if (!ok) fehler++;
+      checkNext();
     });
-  } catch(err) {
-    log("Fehler in Deep_Check():", err);
   }
+
+  checkNext();
 }
 
-// Quick-Check: WLAN-Status und ggf. Boot-Schonzeit
+// Quick-Check
 function Quick_Check() {
   try {
-    var wlanStatus = Shelly.getComponentStatus("wifi").status;
-    if (debugAktiv || wlanStatus !== "got ip") log("Status: WLAN-Status --> [", wlanStatus, "]");
-    if (wlanStatus !== "got ip") {
+    var wifi = Shelly.getComponentStatus("wifi"); // Typo hier: "wifi" vs "wifi"
+    if (wifi.status !== "got ip") {
+      if (debugAktiv) log("WLAN-Status:", wifi.status);
       State_Offline();
       return;
     }
 
-    // Boot-Schonzeit prüfen (keine Prüfungen)
-    var jetzt = Date.now();
-    if ((jetzt - scriptStartZeit) < bootSchonzeitSek * 1000) {
-      log("Boot-Schonzeit aktiv – keine Prüfungen");
+    if ((Date.now() - scriptStartZeit) < bootSchonzeitSek * 1000) {
+      if (debugAktiv) log("Boot-Schonzeit aktiv");
       return;
     }
 
-    // Regulärer Deep-Check starten
-    zaehlerFehlgeschlagen = 0;
-    zaehlerErfolgreich    = 0;
-    anzahlPruefungen       = Object.keys(pruefZiele).length;
-    Deep_Check(pruefZiele);
-
+    Deep_Check();
   } catch(err) {
-    log("Fehler in Quick_Check():", err);
+    log("Fehler in Quick_Check:", err.message);
   }
 }
 
-// Skriptstart: MainLoop starten
+// Skriptstart
 MainStart();
-log("Status: Connection Check läuft mit konfigurierten Einstellungen...");
+log("Status: Skript läuft");
