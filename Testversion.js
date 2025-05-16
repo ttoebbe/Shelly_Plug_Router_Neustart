@@ -1,162 +1,153 @@
-// Connection Check mit Relay-Offline-Funktion und Limit für Shelly Pug S G3
-
-//Testversion
-// Script für Shelly Pug S G3
+// Verbindungsprüfung mit Relais-Offline-Funktion und Limit für Shelly Plug S G3
 
 // Einfaches Logging mit console.log
 function log() {
-  var msg = "";
+  var nachricht = "";
   for (var i = 0; i < arguments.length; i++) {
-    msg += arguments[i] + (i < arguments.length - 1 ? " " : "");
+    nachricht += arguments[i] + (i < arguments.length - 1 ? " " : "");
   }
-  console.log(msg);
+  console.log(nachricht);
 }
 
-var interval            = 60;   // Quick-Check Intervall (Sekunden)
-var offline_duration    = 20;   // Relay off-Dauer bei Offline (Sekunden)
-var resume_delay        = 4;    // Pause bis zur Wiederaufnahme der Prüfung (Minuten)
-var call_timeout        = 15;   // HTTP-Request Timeout (Sekunden)
-var debug               = true; // Debug-Ausgaben aktivieren?
-var show_Response       = true; // HTTP-Antworten anzeigen?
-var maxFailedChecks     = 3;    // NEU: Anzahl aufeinander folgender Fehlprüfungen vor Neustart (einstellbar!)
+var intervallSekunden         = 60;   // Intervall für Schnellprüfung (Sekunden)
+var offlineDauerSekunden      = 20;   // Relais-Aus-Dauer bei Offline (Sekunden)
+var wiederaufnahmePauseMin    = 4;    // Pause bis zur Wiederaufnahme der Prüfung (Minuten)
+var anfrageTimeoutSekunden    = 15;   // HTTP-Request Timeout (Sekunden)
+var debugModus                = true; // Debug-Ausgaben aktivieren?
+var zeigeAntwort              = true; // HTTP-Antworten anzeigen?
 
-var checks = {
+var pruefziele = {
   "dns1": "https://8.8.8.8",
-  "dns2": "http://192.168.110.1"
+  "dns2": "https://1.1.1.1",
+  "dns3": "https://1.0.0.1",
+  "dns4": "https://8.8.4.4"
 };
 
-var tH1                  = null;
-var checks_length        = 0;
-var failedC              = 0;
-var passedC              = 0;
+var timerHandle               = null;
+var pruefzieleAnzahl          = 0;
+var fehlgeschlagenZaehler     = 0;
+var bestandenZaehler          = 0;
 
 // Neu: Tracking der Offline-Ereignisse
-var offlineEvents        = [];    // Zeitstempel (ms) der letzten Offline-Erkennungen
-var offlineLimitReached  = false; // Flag, ob das Limit (3/h) erreicht wurde
+var offlineEreignisse         = [];    // Zeitstempel (ms) der letzten Offline-Erkennungen
+var offlineLimitErreicht      = false; // Flag, ob das Limit (3/h) erreicht wurde
 
-// NEU: Zähler für aufeinander folgende Fehlprüfungen
-var consecutiveFailedChecks = 0;
-
-function State_Offline(){
-  var now = Date.now();
+function Zustand_Offline(){
+  var jetzt = Date.now();
 
   // Wenn Limit bereits erreicht, keine Aktionen mehr, aber Schleife fortsetzen
-  if (offlineLimitReached) {
+  if (offlineLimitErreicht) {
     log("Status: Limit erreicht – keine weiteren Offline-Aktionen.");
-    Main();
+    Hauptfunktion();
     return;
   }
 
   // Offline-Ereignis protokollieren und nur die letzten 60 Minuten behalten
-  offlineEvents.push(now);
-  offlineEvents = offlineEvents.filter(function(ts){
-    return (now - ts) <= 3600 * 1000;
+  offlineEreignisse.push(jetzt);
+  offlineEreignisse = offlineEreignisse.filter(function(zeitstempel){
+    return (jetzt - zeitstempel) <= 3600 * 1000;
   });
 
   // Limit prüfen: 3x in der letzten Stunde?
-  if (offlineEvents.length >= 3) {
-    offlineLimitReached = true;
+  if (offlineEreignisse.length >= 3) {
+    offlineLimitErreicht = true;
     log("Status: 3 Offline-Erkennungen innerhalb 1 Stunde – keine weiteren Offline-Aktionen.");
-    Main();
+    Hauptfunktion();
     return;
   }
 
-  // Noch unter dem Limit: Relay aus für offline_duration Sekunden
-  log("Status: Offline erkannt – schalte Relay AUS für", offline_duration, "Sekunden");
+  // Noch unter dem Limit: Relais aus für offlineDauerSekunden Sekunden
+  log("Status: Offline erkannt – schalte Relais AUS für", offlineDauerSekunden, "Sekunden");
   Shelly.call("Switch.Set", { relay: 0, on: false });
 
-  // Nach offline_duration Sekunden Relay wieder einschalten
-  Timer.set(1000 * offline_duration, false, function(){
-    log("Status: Relay wieder AN");
+  // Nach offlineDauerSekunden Sekunden Relais wieder einschalten
+  Timer.set(1000 * offlineDauerSekunden, false, function(){
+    log("Status: Relais wieder AN");
     Shelly.call("Switch.Set", { relay: 0, on: true });
 
-    // Nach resume_delay Minuten Prüfungen wieder aufnehmen
-    Timer.set(1000 * 60 * resume_delay, false, function(){
-      log("Status: Starte Prüfungen neu nach", resume_delay, "Minuten Pause");
-      Main();
+    // Nach wiederaufnahmePauseMin Minuten Prüfungen wieder aufnehmen
+    Timer.set(1000 * 60 * wiederaufnahmePauseMin, false, function(){
+      log("Status: Starte Prüfungen neu nach", wiederaufnahmePauseMin, "Minuten Pause");
+      Hauptfunktion();
     });
   });
 }
 
-function Callback(r, c, e, k){
+function Rueckruf(antwort, code, fehler, pruefziel){
   try {
-    if (c !== -104) passedC++;
-    else            failedC++;
+    if (code !== -104) bestandenZaehler++;
+    else               fehlgeschlagenZaehler++;
 
-    if (failedC + passedC >= checks_length) {
-      if (passedC === 0) {
-        consecutiveFailedChecks++;
-        if (consecutiveFailedChecks >= maxFailedChecks) {
-          consecutiveFailedChecks = 0;
-          State_Offline();
-        } else {
-          // NICHT Main() hier aufrufen!
-          // Einfach abwarten bis der nächste Intervall-Timer Quick_Check aufruft
-        }
+    if (debugModus) {
+      log("Verbindungsprüfung:", pruefziel, (code !== -104 ? "Bestanden" : "Fehlgeschlagen"), fehler);
+    }
+
+    if (fehlgeschlagenZaehler + bestandenZaehler >= pruefzieleAnzahl) {
+      if (bestandenZaehler === 0) {
+        Zustand_Offline();
       } else {
-        consecutiveFailedChecks = 0;
-        // Auch hier KEIN Main()!
+        Hauptfunktion();
       }
     }
+
+    if (zeigeAntwort) {
+      log("Antwort:", code, fehler, antwort);
+    }
   } catch(err) {
-    // Fehlerbehandlung
+    log("Fehler in Rueckruf():", err);
   }
 }
 
-var checkKeys = Object.keys(checks);
-var checkIndex = 0;
-
-function Deep_Check_One() {
-  var key = checkKeys[checkIndex];
-  checkIndex = (checkIndex + 1) % checkKeys.length;
-  Shelly.call("HTTP.get", {
-    url: checks[key],
-    timeout: 5 // <= Timeout reduziert!
-  }, function(r, c, e, k) {
-    if (c !== -104 && c === 200) {
-      passedC = 1;
-      failedC = 0;
-    } else {
-      passedC = 0;
-      failedC = 1;
-    }
-    // Nur ein Ziel pro Zyklus, daher direkt Callback-Logik:
-    if (passedC === 0) {
-      consecutiveFailedChecks++;
-      if (consecutiveFailedChecks >= maxFailedChecks) {
-        consecutiveFailedChecks = 0;
-        State_Offline();
-      }
-    } else {
-      consecutiveFailedChecks = 0;
-    }
-  }, key);
+function TiefePruefung(pruefzieleObjekt){
+  try {
+    Object.keys(pruefzieleObjekt).forEach(function(schluessel){
+      Shelly.call("HTTP.get", {
+        url:     pruefzieleObjekt[schluessel],
+        timeout: anfrageTimeoutSekunden
+      }, Rueckruf, schluessel);
+    });
+  } catch(err) {
+    log("Fehler in TiefePruefung():", err);
+  }
 }
 
-function Quick_Check(){
+function Schnellpruefung(){
   try {
-    var ip_Status = Shelly.getComponentStatus("wifi").status;
-    if (ip_Status !== "got ip") {
-      Timer.clear(tH1);
-      State_Offline();
+    var ipStatus = Shelly.getComponentStatus("wifi").status;
+
+    if (debugModus || ipStatus !== "got ip") {
+      log("Status: Shelly IP-Status --> [", ipStatus, "]");
+    }
+
+    if (ipStatus !== "got ip") {
+      // Keine IP = sofort Offline-Aktion (Zustand_Offline kümmert sich um Limit)
+      Timer.clear(timerHandle);
+      Zustand_Offline();
       return;
     }
-    Timer.clear(tH1);
-    Deep_Check_One();
+
+    // IP vorhanden → tiefergehende Internet-Checks
+    Timer.clear(timerHandle);
+    fehlgeschlagenZaehler = 0;
+    bestandenZaehler      = 0;
+    pruefzieleAnzahl      = Object.keys(pruefziele).length;
+    TiefePruefung(pruefziele);
+
   } catch(err) {
-    Main();
+    log("Fehler in Schnellpruefung():", err);
+    Hauptfunktion();
   }
 }
 
-function Main(){
+function Hauptfunktion(){
   try {
-    Timer.clear(tH1);
-    tH1 = Timer.set(1000 * interval, true, Quick_Check);
+    Timer.clear(timerHandle);
+    timerHandle = Timer.set(1000 * intervallSekunden, true, Schnellpruefung);
   } catch(err) {
-    log("Error in Main():", err);
+    log("Fehler in Hauptfunktion():", err);
   }
 }
 
 // Script starten
-Main();
-log("Status: Connection Check mit Relay-Offline-Limit läuft...");
+Hauptfunktion();
+log("Status: Verbindungsprüfung mit Relais-Offline-Limit läuft...");
