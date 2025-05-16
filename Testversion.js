@@ -83,72 +83,67 @@ function Callback(r, c, e, k){
     if (c !== -104) passedC++;
     else            failedC++;
 
-    if (debug) {
-      log("Connection check:", k, (c !== -104 ? "Passed" : "Failed"), e);
-    }
-
     if (failedC + passedC >= checks_length) {
       if (passedC === 0) {
-        // NEU: Zähler für aufeinander folgende Fehlprüfungen erhöhen
         consecutiveFailedChecks++;
-        log("Warnung: Fehlgeschlagene Prüfzyklen in Folge:", consecutiveFailedChecks, "/", maxFailedChecks);
         if (consecutiveFailedChecks >= maxFailedChecks) {
-          consecutiveFailedChecks = 0; // Zähler zurücksetzen nach Auslösung
+          consecutiveFailedChecks = 0;
           State_Offline();
         } else {
-          Main();
+          // NICHT Main() hier aufrufen!
+          // Einfach abwarten bis der nächste Intervall-Timer Quick_Check aufruft
         }
       } else {
-        consecutiveFailedChecks = 0; // Bei Erfolg zurücksetzen
-        Main();
+        consecutiveFailedChecks = 0;
+        // Auch hier KEIN Main()!
       }
     }
-
-    if (show_Response) {
-      log("Response:", c, e, r);
-    }
   } catch(err) {
-    log("Error in Callback():", err);
+    // Fehlerbehandlung
   }
 }
 
-function Deep_Check(check_points){
-  try {
-    Object.keys(check_points).forEach(function(key){
-      Shelly.call("HTTP.get", {
-        url:     check_points[key],
-        timeout: call_timeout
-      }, Callback, key);
-    });
-  } catch(err) {
-    log("Error in Deep_Check():", err);
-  }
+var checkKeys = Object.keys(checks);
+var checkIndex = 0;
+
+function Deep_Check_One() {
+  var key = checkKeys[checkIndex];
+  checkIndex = (checkIndex + 1) % checkKeys.length;
+  Shelly.call("HTTP.get", {
+    url: checks[key],
+    timeout: 5 // <= Timeout reduziert!
+  }, function(r, c, e, k) {
+    if (c !== -104 && c === 200) {
+      passedC = 1;
+      failedC = 0;
+    } else {
+      passedC = 0;
+      failedC = 1;
+    }
+    // Nur ein Ziel pro Zyklus, daher direkt Callback-Logik:
+    if (passedC === 0) {
+      consecutiveFailedChecks++;
+      if (consecutiveFailedChecks >= maxFailedChecks) {
+        consecutiveFailedChecks = 0;
+        State_Offline();
+      }
+    } else {
+      consecutiveFailedChecks = 0;
+    }
+  }, key);
 }
 
 function Quick_Check(){
   try {
     var ip_Status = Shelly.getComponentStatus("wifi").status;
-
-    if (debug || ip_Status !== "got ip") {
-      log("Status: Shelly IP-Status --> [", ip_Status, "]");
-    }
-
     if (ip_Status !== "got ip") {
-      // Keine IP = sofort Offline-Aktion (State_Offline kümmert sich um Limit)
       Timer.clear(tH1);
       State_Offline();
       return;
     }
-
-    // IP vorhanden → tiefergehende Internet-Checks
     Timer.clear(tH1);
-    failedC       = 0;
-    passedC       = 0;
-    checks_length = Object.keys(checks).length;
-    Deep_Check(checks);
-
+    Deep_Check_One();
   } catch(err) {
-    log("Error in Quick_Check():", err);
     Main();
   }
 }
