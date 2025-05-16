@@ -1,3 +1,5 @@
+Achtung, nocht nicht lauffähig!!!!!
+
 # Shelly_Plug_Router_Neustart
 Grund für dieses Skript: 
 Eine für mich schlecht erreichbare Router geht alle 2-3 Wochen auf Störung und ist über das Webinterface nicht mehr zu erreichen. Nach dreimaligen Austausch des Routers ist der Fehler der Selbe. Also gehe ich nun davon aus, dass im Netz (Strom oder Kabel) Störfrequenzen vorhanden sind. Somit soll der Fehler nun automtisch erkannt werden und der Neustart des Routers alleine erfolgen.
