@@ -1,10 +1,12 @@
 # Shelly_Plug_Router_Neustart
-Router Neustart wenn Offline oder Router nicht erreichbar mit Shelly 
+Grund für dieses Skript: 
+Eine für mich schlecht erreichbare Router geht alle 2-3 Wochen auf Störung und ist über das Webinterface nicht mehr zu erreichen. Nach dreimaligen Austausch des Routers ist der Fehler der Selbe. Also gehe ich nun davon aus, dass im Netz (Strom oder Kabel) Störfrequenzen vorhanden sind. Somit soll der Fehler nun automtisch erkannt werden und der Neustart des Routers alleine erfolgen.
+
 
 
 # Connection Check mit Relay‑Offline‑Limit für Shelly Pug S G3
 
-Dieses Skript überwacht kontinuierlich die Internet-Konnektivität deines Shelly Pug S G3 und steuert ein Relay entsprechend, wenn ein Offline-Zustand erkannt wird. Es verhindert darüber hinaus zu häufiges Schalten (Limit: maximal 3 Offline‑Zyklen pro Stunde) und berücksichtigt die Bootzeit der lokalen Fritz!Box.
+Dieses Skript überwacht kontinuierlich die Internet-Konnektivität deines Shelly Pug S G3 und steuert ein Relay entsprechend (Neustart des Router auslösen), wenn ein Offline-Zustand erkannt wird oder der Router selber nicht mehr erreicht wird. Es verhindert darüber hinaus zu häufiges Schalten (Limit: maximal 3 Offline‑Zyklen pro Stunde) und berücksichtigt die Bootzeit der lokalen Fritz!Box.
 
 ## Features
 
