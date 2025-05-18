@@ -1,4 +1,4 @@
-/// <reference path="../../shelly-script.d.ts" />
+// <reference path="../../shelly-script.d.ts" />
 // created from vscode
 
 var targetIPs = [
@@ -20,7 +20,7 @@ function checkIPs() {
     var responses = 0;
     var success = 0;
     targetIPs.forEach(function(targetIP) {
-        Shelly.call("HTTP.GET", { url: targetIP, timeout: 8000 }, function(res, error_code, error_msg) {
+        Shelly.call("HTTP.GET", { url: targetIP, timeout: 15000 }, function(res, error_code, error_msg) {
             if (error_code === 0 && res && res.code === 200) {
                 success++;
                 print("IP " + targetIP + " erreichbar.");

@@ -1,4 +1,4 @@
-/// <reference path="../../shelly-script.d.ts" />
+// <reference path="../../shelly-script.d.ts" />
 // created from vscode
 
 var targetIPs = [
