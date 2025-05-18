@@ -11,7 +11,7 @@ var pauseAfterOffline = 180; // Sekunden (3 Minuten) Pause nach Offline-Event
 var initialPause = 180; // Sekunden (3 Minuten) nach Skriptstart keine Prüfung
 var maxOfflineEvents = 3; // Maximal 3 Offline-Events pro Stunde
 var failureThreshold = 3; // Nach 3 Fehlversuchen wird Ausgang geschaltet
-var timeout = 15000; // Timeout für HTTP-Requests in Millisekunden / besser nicht unter 15 Sekunden setzen, da "neverssl.com" auch mal länger braucht
+var httptimeout = 15000; // Timeout für HTTP-Requests in Millisekunden / besser nicht unter 15 Sekunden setzen, da "neverssl.com" auch mal länger braucht
 
 var failureCount = 0;
 var offlineEvents = [];
@@ -22,7 +22,7 @@ function checkIPs() {
     var success = 0;
     targetIPs.forEach(function(targetIP) {
 <<<<<<< HEAD
-        Shelly.call("HTTP.GET", { url: targetIP, timeout: 15000 }, function(res, error_code, error_msg) {
+        Shelly.call("HTTP.GET", { url: targetIP, timeout: httptimeout }, function(res, error_code, error_msg) {
 =======
         Shelly.call("HTTP.GET", { url: targetIP, timeout}, function(res, error_code, error_msg) {
 >>>>>>> c58e10f6c77ede6ff1b56b045258a9b388789622
