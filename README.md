@@ -1,4 +1,3 @@
-Achtung, nocht nicht lauffähig!!!!!
 
 # Shelly_Plug_Router_Neustart
 Grund für dieses Skript: 
