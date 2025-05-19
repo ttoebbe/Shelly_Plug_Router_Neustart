@@ -7,7 +7,7 @@ Eine für mich schlecht erreichbare Router geht alle 2-3 Wochen auf Störung und
 
 # Shelly Plug Router Neustart – Automatisches Überwachungs- und Neustartskript
 
-Dieses Skript überwacht mit einem Shelly Plug (z. B. 2PM oder Plug S) die Erreichbarkeit deiner Fritzbox und einer externen Internetadresse. Bei wiederholtem Ausfall wird der angeschlossene Router automatisch für eine definierte Zeit vom Strom getrennt (Neustart). Das Skript ist für die Shelly Script Engine geschrieben.
+Dieses Skript überwacht mit einem Shelly(z. B. 2PM oder Plug S (Achtung, Plug noch ungetestet, da ich nur den Gen3 dahabe und der noch einen BUG in der Firmware hat)) die Erreichbarkeit deiner Fritzbox und einer externen Internetadresse. Bei wiederholtem Ausfall wird der angeschlossene Router automatisch für eine definierte Zeit vom Strom getrennt (Neustart). Das Skript ist für die Shelly Script Engine geschrieben.
 
 ## Funktionsweise
 
@@ -34,6 +34,7 @@ Im Skript können folgende Werte angepasst werden:
 | `initialPause`      | Wartezeit nach Skriptstart (Sekunden)                 | 180          |
 | `maxOfflineEvents`  | Max. Neustarts pro Stunde                             | 3            |
 | `failureThreshold`  | Fehlversuche, bevor Neustart ausgelöst wird           | 3            |
+| `httptimeout´       | Wartezeit auf Antwort                                 | 15000        |
 
 ## Hinweise
 
