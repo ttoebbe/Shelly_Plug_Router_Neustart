@@ -1,5 +1,4 @@
 // <reference path="../../shelly-script.d.ts" />
-// created from vscode
 
 var targetIPs = [
     "http://192.168.110.1",   // Deine Fritzbox, falls HTTP aktiviert ist
